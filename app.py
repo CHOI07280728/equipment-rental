@@ -9,7 +9,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 2. 세션 상태(Session State) 초기화 및 데이터 구조 고도화
+# 2. 세션 상태(Session State) 초기화
 if "users" not in st.session_state:
     st.session_state.users = {
         "admin": {
@@ -23,47 +23,46 @@ if "users" not in st.session_state:
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 
-# 기자재 데이터베이스 (일련번호 EQ-100 단위 고유 관리)
+# 기자재 데이터베이스 (카테고리, 일련번호, 기자재명 체계)
 if "equipments" not in st.session_state:
     st.session_state.equipments = [
         {
             "id": "EQ-101",
-            "name": "Blackmagic Pocket Cinema Camera 6K Pro",
             "category": "카메라",
+            "name": "Blackmagic Pocket Cinema Camera 6K Pro",
         },
         {
             "id": "EQ-102",
-            "name": "Sony FX3 시네마 카메라",
             "category": "카메라",
+            "name": "Sony FX3 시네마 카메라",
         },
         {
             "id": "EQ-103",
-            "name": "Libec 650EX 비디오 삼각대",
             "category": "삼각대",
+            "name": "Libec 650EX 비디오 삼각대",
         },
         {
             "id": "EQ-104",
-            "name": "SmallRig 숄더 리그 키트",
             "category": "액세서리",
+            "name": "SmallRig 숄더 리그 키트",
         },
         {
             "id": "EQ-105",
-            "name": "Hollyland Lark M1 무선 마이크",
             "category": "음향",
+            "name": "Hollyland Lark M1 무선 마이크",
         },
         {
             "id": "EQ-106",
-            "name": "Amaran 200d LED 지속광 조명",
             "category": "조명",
+            "name": "Amaran 200d LED 지속광 조명",
         },
         {
             "id": "EQ-107",
-            "name": "Atomos Ninja V 5인치 모니터",
             "category": "디스플레이",
+            "name": "Atomos Ninja V 5인치 모니터",
         },
     ]
 
-# 대여 신청 및 예약 데이터베이스
 if "rentals" not in st.session_state:
     st.session_state.rentals = [
         {
@@ -162,11 +161,13 @@ else:
 # 메인 타이틀
 st.title("🎥 전문 장비 대여 및 통합 일정 관리 시스템")
 
-# 메인 탭 구성
-tab1, tab2, tab3 = st.tabs([
+# 메인 탭 구성 (관리자 기능 포함 5대 탭)
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📝 장비 대여 신청서",
     "⚙️ 관리자 승인 및 불출/반납 관리",
     "📅 대여 일정 현황 및 조정",
+    "📦 장비 등록 및 관리",
+    "👥 회원 정보 관리",
 ])
 
 # ---------------------------------------------------------
@@ -194,7 +195,6 @@ with tab1:
 
         st.subheader("📦 대여 기자재 선택 (일련번호 표기)")
 
-        # 선택 옵션 생성 (일련번호 ID 매핑)
         eq_map = {
             f"[{item['id']}] [{item['category']}] {item['name']}": item
             for item in st.session_state.equipments
@@ -267,7 +267,6 @@ with tab2:
             with st.container():
                 st.markdown(f"#### 📌 예약 넘버: `{rental['res_id']}`")
 
-                # 상단 주요 제어바
                 col_info, col_app, col_chk, col_ret = st.columns(
                     [2.5, 1.2, 1.2, 1.2]
                 )
@@ -322,7 +321,6 @@ with tab2:
                         st.write("**반납 완료**")
                         st.badge(rental["return_status"])
 
-                # 하단 전체 너비 Expander 상세보기
                 with st.expander(
                     f"🔍 [상세보기] 예약 넘버 {rental['res_id']} 대여 내역 및 기자재 명세서",
                     expanded=False,
@@ -360,7 +358,6 @@ with tab2:
 
                         df_eq = pd.DataFrame(formatted_eqs)
                         if not df_eq.empty:
-                            # 카테고리 맨 왼쪽 배치 및 정렬
                             df_eq = df_eq[["category", "id", "name"]]
                             df_eq.columns = [
                                 "카테고리 (분류)",
@@ -469,3 +466,150 @@ with tab3:
                 target_item["end_date"] = str(new_end)
                 st.success(f"예약 넘버 {target_res}의 대여 일정이 정상 수정되었음.")
                 st.rerun()
+
+# ---------------------------------------------------------
+# TAB 4: 장비 등록 및 관리 (신규 요구사항 1번)
+# ---------------------------------------------------------
+with tab4:
+    st.header("📦 장비 등록 및 관리 (관리자 전용)")
+
+    if not is_admin:
+        st.warning("⚠️ 장비 등록 및 관리는 관리자 계정으로 로그인해야 접근 가능함.")
+    else:
+        st.subheader("➕ 신규 기자재 등록")
+        col_e1, col_e2, col_e3 = st.columns(3)
+        with col_e1:
+            new_cat = st.text_input(
+                "카테고리 (분류)", placeholder="예: 카메라, 조명, 음향"
+            )
+        with col_e2:
+            new_id = st.text_input(
+                "일련번호 (ID)", placeholder="예: EQ-108"
+            )
+        with col_e3:
+            new_name = st.text_input(
+                "기자재명", placeholder="예: Canon EOS R5"
+            )
+
+        if st.button("장비 등록 완료", type="primary"):
+            if not new_cat or not new_id or not new_name:
+                st.error("카테고리, 일련번호, 기자재명을 모두 입력해줌.")
+            elif any(
+                eq["id"] == new_id.strip() for eq in st.session_state.equipments
+            ):
+                st.error("이미 존재하는 일련번호(ID)임. 다른 일련번호를 사용해줌.")
+            else:
+                st.session_state.equipments.append(
+                    {
+                        "id": new_id.strip(),
+                        "category": new_cat.strip(),
+                        "name": new_name.strip(),
+                    }
+                )
+                st.success(
+                    f"신규 장비 [{new_id.strip()}] {new_name.strip()} 등록이 정상 완료되었음."
+                )
+                st.rerun()
+
+        st.divider()
+        st.subheader("📋 등록된 전체 기자재 관리 목록")
+
+        df_eq_manage = pd.DataFrame(st.session_state.equipments)
+        if not df_eq_manage.empty:
+            df_eq_manage = df_eq_manage[["category", "id", "name"]]
+            df_eq_manage.columns = ["카테고리 (분류)", "일련번호 (ID)", "기자재명"]
+            st.dataframe(
+                df_eq_manage.sort_values(by="카테고리 (분류)"),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.subheader("🗑️ 등록 장비 삭제")
+            del_eq_id = st.selectbox(
+                "삭제할 장비 선택 (일련번호 기준):",
+                [eq["id"] for eq in st.session_state.equipments],
+            )
+            if st.button("선택 장비 삭제"):
+                st.session_state.equipments = [
+                    eq
+                    for eq in st.session_state.equipments
+                    if eq["id"] != del_eq_id
+                ]
+                st.success(f"일련번호 [{del_eq_id}] 장비 삭제가 완료되었음.")
+                st.rerun()
+
+# ---------------------------------------------------------
+# TAB 5: 회원 정보 관리 (신규 요구사항 2번)
+# ---------------------------------------------------------
+with tab5:
+    st.header("👥 회원 정보 관리 (관리자 전용)")
+
+    if not is_admin:
+        st.warning("⚠️ 회원 정보 관리는 관리자 계정으로 로그인해야 접근 가능함.")
+    else:
+        st.subheader("📋 전체 회원 현황")
+
+        user_list_data = []
+        for uid, uinfo in st.session_state.users.items():
+            user_list_data.append(
+                {
+                    "아이디 (핸드폰)": uid,
+                    "성명": uinfo["name"],
+                    "권한": uinfo.get("role", "USER"),
+                    "비밀번호": uinfo["password"],
+                }
+            )
+
+        df_users = pd.DataFrame(user_list_data)
+        st.dataframe(df_users, use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("🛠️ 회원 비밀번호 변경 및 회원 삭제")
+
+        target_user_id = st.selectbox(
+            "관리할 대상 회원 선택 (아이디):",
+            list(st.session_state.users.keys()),
+        )
+
+        if target_user_id:
+            target_user_info = st.session_state.users[target_user_id]
+            st.info(
+                f"선택 회원: **{target_user_info['name']}** (`{target_user_id}`) | 권한: `{target_user_info.get('role', 'USER')}`"
+            )
+
+            col_m1, col_m2 = st.columns(2)
+
+            # 비밀번호 변경
+            with col_m1:
+                st.markdown("**🔑 비밀번호 변경**")
+                mod_pw = st.text_input(
+                    "새 비밀번호 입력",
+                    type="password",
+                    key="admin_mod_pw_input",
+                )
+                if st.button("비밀번호 변경 적용"):
+                    if not mod_pw:
+                        st.error("변경할 비밀번호를 입력해줌.")
+                    else:
+                        st.session_state.users[target_user_id][
+                            "password"
+                        ] = mod_pw
+                        st.success(
+                            f"회원 `{target_user_id}`의 비밀번호 변경이 완료되었음."
+                        )
+                        st.rerun()
+
+            # 회원 삭제
+            with col_m2:
+                st.markdown("**🗑️ 회원 삭제**")
+                st.caption("주의: 회원 삭제 시 복구할 수 없음.")
+                if st.button("선택 회원 삭제", type="primary"):
+                    if (
+                        target_user_id
+                        == st.session_state.logged_in_user["phone"]
+                    ):
+                        st.error("현재 로그인 중인 관리자 본인 계정은 삭제할 수 없음.")
+                    else:
+                        del st.session_state.users[target_user_id]
+                        st.success(f"회원 `{target_user_id}` 삭제가 완료되었음.")
+                        st.rerun()
