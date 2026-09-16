@@ -1,17 +1,17 @@
+from datetime import date, datetime
 import pandas as pd
 import streamlit as st
-from datetime import date, datetime
 
 # 1. 페이지 기본 설정
 st.set_page_config(
-    page_title="스마트 장비 대여 및 일정 관리 시스템",
+    page_title="스마트 장비 대여 및 통합 일정 관리 시스템",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # 2. 세션 상태(Session State) 초기화
+# 관리자 계정(admin/admin123)을 세션 데이터베이스에 사전 등록
 if "users" not in st.session_state:
-    # 기본 관리자 계정 (ID: admin / PW: admin123)
     st.session_state.users = {
         "admin": {
             "name": "총괄 관리자",
@@ -44,7 +44,6 @@ if "equipments" not in st.session_state:
     ]
 
 if "rentals" not in st.session_state:
-    # 샘플 예시 데이터
     st.session_state.rentals = [
         {
             "res_id": "RES-20260916-001",
@@ -64,7 +63,7 @@ if "rentals" not in st.session_state:
     ]
 
 # 3. 사이드바 - 로그인 및 회원가입
-st.sidebar.title("🔐 회원 인증 센터")
+st.sidebar.title("🔐 회원 인증 Center")
 
 if st.session_state.logged_in_user is None:
     tab_login, tab_register = st.sidebar.tabs(["🔑 로그인", "📝 회원가입"])
@@ -72,9 +71,7 @@ if st.session_state.logged_in_user is None:
     # 로그인 탭
     with tab_login:
         st.subheader("로그인")
-        login_id = st.text_input(
-            "아이디 (핸드폰 번호 또는 admin)", key="login_id"
-        )
+        login_id = st.text_input("아이디 (핸드폰 번호)", key="login_id")
         login_pw = st.text_input(
             "비밀번호", type="password", key="login_pw"
         )
@@ -91,7 +88,7 @@ if st.session_state.logged_in_user is None:
             else:
                 st.error("존재하지 않는 아이디임.")
 
-    # 회원가입 탭
+    # 회원가입 탭 (핸드폰 번호가 아이디 역할)
     with tab_register:
         st.subheader("신규 회원가입")
         reg_phone = st.text_input(
@@ -107,7 +104,7 @@ if st.session_state.logged_in_user is None:
             "비밀번호 확인", type="password", key="reg_pw_confirm"
         )
 
-        if st.button("회원가입 신청", use_container_width=True):
+        if st.button("회원가입 완료", use_container_width=True):
             if not reg_phone or not reg_name or not reg_pw:
                 st.error("모든 입력 항목을 기입해줌.")
             elif reg_phone in st.session_state.users:
@@ -156,7 +153,7 @@ with tab1:
     if st.session_state.logged_in_user is None:
         st.warning("⚠️ 장비 대여 신청을 위해 먼저 사이드바에서 로그인해줌.")
     else:
-        # 신청자 정보 자동 입력 (성명, ID인 핸드폰 번호)
+        # 로그인 사용자의 성명과 ID(핸드폰 번호) 자동 연동
         col_u1, col_u2 = st.columns(2)
         with col_u1:
             app_name = st.text_input(
@@ -231,7 +228,7 @@ with tab2:
     )
 
     if not is_admin:
-        st.info("💡 관리자 계정(`admin` / `admin123`)으로 로그인하면 승인, 불출, 반납 상태를 변경할 수 있음.")
+        st.info("💡 관리자 계정으로 로그인 시 대여 승인, 불출, 반납 상태를 직접 변경할 수 있음.")
 
     if not st.session_state.rentals:
         st.info("현재 등록된 대여 신청 내역이 없음.")
@@ -252,7 +249,7 @@ with tab2:
                         f"📅 기간: {rental['start_date']} ~ {rental['end_date']}"
                     )
 
-                # 대여 승인 제어
+                # 대여 승인
                 with col_app:
                     if is_admin:
                         rental["approval"] = st.selectbox(
@@ -265,16 +262,9 @@ with tab2:
                         )
                     else:
                         st.write("**대여 승인**")
-                        st.badge(
-                            rental["approval"],
-                            color="green"
-                            if rental["approval"] == "승인"
-                            else "red"
-                            if rental["approval"] == "거절"
-                            else "gray",
-                        )
+                        st.badge(rental["approval"])
 
-                # 불출 완료 제어
+                # 불출 완료
                 with col_chk:
                     if is_admin:
                         rental["checkout"] = st.selectbox(
@@ -289,7 +279,7 @@ with tab2:
                         st.write("**불출 완료**")
                         st.badge(rental["checkout"])
 
-                # 반납 완료 제어
+                # 반납 완료
                 with col_ret:
                     if is_admin:
                         rental["return_status"] = st.selectbox(
@@ -304,7 +294,7 @@ with tab2:
                         st.write("**반납 완료**")
                         st.badge(rental["return_status"])
 
-                # 상세 보기 팝업 (모달)
+                # 자세히 보기 (팝업 모달 방식)
                 with col_detail:
                     st.write("**상세 보기**")
                     with st.popover("🔍 자세히 보기"):
@@ -391,5 +381,5 @@ with tab3:
             if st.button("일정 변경 적용"):
                 target_item["start_date"] = str(new_start)
                 target_item["end_date"] = str(new_end)
-                st.success(f"예약 넘버 {target_res}의 대여 일정이 변경되었음.")
+                st.success(f"예약 넘버 {target_res}의 대여 일정이 정상 수정되었음.")
                 st.rerun()
