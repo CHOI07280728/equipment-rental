@@ -10,7 +10,6 @@ st.set_page_config(
 )
 
 # 2. 세션 상태(Session State) 초기화
-# 관리자 계정(admin/admin123)을 세션 데이터베이스에 사전 등록
 if "users" not in st.session_state:
     st.session_state.users = {
         "admin": {
@@ -24,23 +23,44 @@ if "users" not in st.session_state:
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 
+# 기자재 데이터베이스 (일련번호 포함)
 if "equipments" not in st.session_state:
     st.session_state.equipments = [
         {
-            "id": 101,
+            "id": "EQ-101",
             "name": "Blackmagic Pocket Cinema Camera 6K Pro",
             "category": "카메라",
         },
-        {"id": 102, "name": "Sony FX3 시네마 카메라", "category": "카메라"},
-        {"id": 103, "name": "Libec 650EX 비디오 삼각대", "category": "삼각대"},
-        {"id": 104, "name": "SmallRig 숄더 리그 키트", "category": "액세서리"},
         {
-            "id": 105,
+            "id": "EQ-102",
+            "name": "Sony FX3 시네마 카메라",
+            "category": "카메라",
+        },
+        {
+            "id": "EQ-103",
+            "name": "Libec 650EX 비디오 삼각대",
+            "category": "삼각대",
+        },
+        {
+            "id": "EQ-104",
+            "name": "SmallRig 숄더 리그 키트",
+            "category": "액세서리",
+        },
+        {
+            "id": "EQ-105",
             "name": "Hollyland Lark M1 무선 마이크",
             "category": "음향",
         },
-        {"id": 106, "name": "Amaran 200d LED 지속광 조명", "category": "조명"},
-        {"id": 107, "name": "Atomos Ninja V 5인치 모니터", "category": "디스플레이"},
+        {
+            "id": "EQ-106",
+            "name": "Amaran 200d LED 지속광 조명",
+            "category": "조명",
+        },
+        {
+            "id": "EQ-107",
+            "name": "Atomos Ninja V 5인치 모니터",
+            "category": "디스플레이",
+        },
     ]
 
 if "rentals" not in st.session_state:
@@ -50,8 +70,16 @@ if "rentals" not in st.session_state:
             "user_name": "홍길동",
             "user_id": "01012345678",
             "equipments": [
-                "[카메라] Blackmagic Pocket Cinema Camera 6K Pro",
-                "[삼각대] Libec 650EX 비디오 삼각대",
+                {
+                    "id": "EQ-101",
+                    "category": "카메라",
+                    "name": "Blackmagic Pocket Cinema Camera 6K Pro",
+                },
+                {
+                    "id": "EQ-103",
+                    "category": "삼각대",
+                    "name": "Libec 650EX 비디오 삼각대",
+                },
             ],
             "start_date": "2026-09-16",
             "end_date": "2026-09-18",
@@ -68,7 +96,6 @@ st.sidebar.title("🔐 회원 인증 Center")
 if st.session_state.logged_in_user is None:
     tab_login, tab_register = st.sidebar.tabs(["🔑 로그인", "📝 회원가입"])
 
-    # 로그인 탭
     with tab_login:
         st.subheader("로그인")
         login_id = st.text_input("아이디 (핸드폰 번호)", key="login_id")
@@ -88,7 +115,6 @@ if st.session_state.logged_in_user is None:
             else:
                 st.error("존재하지 않는 아이디임.")
 
-    # 회원가입 탭 (핸드폰 번호가 아이디 역할)
     with tab_register:
         st.subheader("신규 회원가입")
         reg_phone = st.text_input(
@@ -132,17 +158,13 @@ else:
         st.session_state.logged_in_user = None
         st.rerun()
 
-# 메인 타이틀
 st.title("🎥 전문 장비 대여 및 통합 일정 관리 시스템")
 
-# 메인 탭 구성
-tab1, tab2, tab3 = st.tabs(
-    [
-        "📝 장비 대여 신청서",
-        "⚙️ 관리자 승인 및 불출/반납 관리",
-        "📅 대여 일정 현황 및 조정",
-    ]
-)
+tab1, tab2, tab3 = st.tabs([
+    "📝 장비 대여 신청서",
+    "⚙️ 관리자 승인 및 불출/반납 관리",
+    "📅 대여 일정 현황 및 조정",
+])
 
 # ---------------------------------------------------------
 # TAB 1: 장비 대여 신청서
@@ -153,7 +175,6 @@ with tab1:
     if st.session_state.logged_in_user is None:
         st.warning("⚠️ 장비 대여 신청을 위해 먼저 사이드바에서 로그인해줌.")
     else:
-        # 로그인 사용자의 성명과 ID(핸드폰 번호) 자동 연동
         col_u1, col_u2 = st.columns(2)
         with col_u1:
             app_name = st.text_input(
@@ -168,14 +189,17 @@ with tab1:
                 disabled=True,
             )
 
-        st.subheader("📦 대여 기자재 다중 선택")
-        eq_options = [
-            f"[{item['category']}] {item['name']}"
+        st.subheader("📦 대여 기자재 선택 (일련번호 표기)")
+
+        # 선택 옵션 생성 (일련번호 ID 포함)
+        eq_map = {
+            f"[{item['id']}] [{item['category']}] {item['name']}": item
             for item in st.session_state.equipments
-        ]
-        selected_eqs = st.multiselect(
-            "대여할 장비를 여러 개 선택해줌 (다중 선택 가능):",
-            eq_options,
+        }
+
+        selected_display_names = st.multiselect(
+            "대여할 장비를 선택해줌 (일련번호 매핑됨):",
+            options=list(eq_map.keys()),
             placeholder="장비를 선택해줌...",
         )
 
@@ -193,17 +217,20 @@ with tab1:
         if st.button(
             "🚀 장비 대여 신청서 제출", type="primary", use_container_width=True
         ):
-            if not selected_eqs:
+            if not selected_display_names:
                 st.error("대여할 장비를 1개 이상 선택해줌.")
             elif start_d > end_d:
                 st.error("반납 예정일이 대여 시작일보다 빠를 수 없음.")
             else:
+                selected_equip_objs = [
+                    eq_map[name] for name in selected_display_names
+                ]
                 res_no = f"RES-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 new_item = {
                     "res_id": res_no,
                     "user_name": app_name,
                     "user_id": app_id,
-                    "equipments": selected_eqs,
+                    "equipments": selected_equip_objs,
                     "start_date": str(start_d),
                     "end_date": str(end_d),
                     "approval": "대기",
@@ -237,8 +264,9 @@ with tab2:
             with st.container():
                 st.markdown(f"#### 📌 예약 넘버: `{rental['res_id']}`")
 
-                col_info, col_app, col_chk, col_ret, col_detail = st.columns(
-                    [2, 1.2, 1.2, 1.2, 1.2]
+                # 상단 메인 제어바
+                col_info, col_app, col_chk, col_ret = st.columns(
+                    [2.5, 1.2, 1.2, 1.2]
                 )
 
                 with col_info:
@@ -249,7 +277,6 @@ with tab2:
                         f"📅 기간: {rental['start_date']} ~ {rental['end_date']}"
                     )
 
-                # 대여 승인
                 with col_app:
                     if is_admin:
                         rental["approval"] = st.selectbox(
@@ -264,7 +291,6 @@ with tab2:
                         st.write("**대여 승인**")
                         st.badge(rental["approval"])
 
-                # 불출 완료
                 with col_chk:
                     if is_admin:
                         rental["checkout"] = st.selectbox(
@@ -279,7 +305,6 @@ with tab2:
                         st.write("**불출 완료**")
                         st.badge(rental["checkout"])
 
-                # 반납 완료
                 with col_ret:
                     if is_admin:
                         rental["return_status"] = st.selectbox(
@@ -294,24 +319,58 @@ with tab2:
                         st.write("**반납 완료**")
                         st.badge(rental["return_status"])
 
-                # 자세히 보기 (팝업 모달 방식)
-                with col_detail:
-                    st.write("**상세 보기**")
-                    with st.popover("🔍 자세히 보기"):
+                # [수정] 상세 보기를 다음 줄 전체 너비 Expander로 변경
+                with st.expander(
+                    f"🔍 [상세보기] 예약 넘버 {rental['res_id']} 대여 내역 및 기자재 명세서",
+                    expanded=False,
+                ):
+                    c1, c2 = st.columns([1, 2])
+                    with c1:
+                        st.markdown("**📄 기본 대여 정보**")
+                        st.write(
+                            f"- **신청자:** {rental['user_name']} ({rental['user_id']})"
+                        )
+                        st.write(
+                            f"- **대여 기간:** {rental['start_date']} ~ {rental['end_date']}"
+                        )
+                        st.write(f"- **사용 목적:** {rental.get('note', '없음')}")
+
+                    with c2:
                         st.markdown(
-                            f"**[예약 넘버: {rental['res_id']}]**"
+                            "**📋 신청 기자재 목록 (카테고리별 분류 및 일련번호)**"
                         )
-                        st.write(
-                            f"👤 **신청자:** {rental['user_name']} ({rental['user_id']})"
-                        )
-                        st.write(
-                            f"📅 **대여 기간:** {rental['start_date']} ~ {rental['end_date']}"
-                        )
-                        st.write(f"📝 **사용 목적:** {rental.get('note', '없음')}")
-                        st.divider()
-                        st.markdown("📋 **대여 기자재 목록:**")
-                        for eq in rental["equipments"]:
-                            st.write(f"- {eq}")
+
+                        eq_list = rental["equipments"]
+                        formatted_eqs = []
+
+                        for eq in eq_list:
+                            if isinstance(eq, dict):
+                                formatted_eqs.append(eq)
+                            else:
+                                formatted_eqs.append(
+                                    {
+                                        "category": "기타",
+                                        "id": "-",
+                                        "name": str(eq),
+                                    }
+                                )
+
+                        df_eq = pd.DataFrame(formatted_eqs)
+                        if not df_eq.empty:
+                            # [수정] 카테고리 컬럼을 가장 왼쪽에 배치 및 정렬
+                            df_eq = df_eq[["category", "id", "name"]]
+                            df_eq.columns = [
+                                "카테고리 (분류)",
+                                "일련번호 (ID)",
+                                "기자재명",
+                            ]
+                            df_eq = df_eq.sort_values(by="카테고리 (분류)")
+
+                            st.dataframe(
+                                df_eq,
+                                use_container_width=True,
+                                hide_index=True,
+                            )
 
                 st.divider()
 
@@ -324,12 +383,35 @@ with tab3:
     if not st.session_state.rentals:
         st.info("등록된 대여 일정이 없음.")
     else:
-        df_rentals = pd.DataFrame(st.session_state.rentals)
+        flat_rentals = []
+        for r in st.session_state.rentals:
+            eq_names = [
+                f"[{eq['category']}] {eq['name']}"
+                if isinstance(eq, dict)
+                else str(eq)
+                for eq in r["equipments"]
+            ]
+            flat_rentals.append(
+                {
+                    "res_id": r["res_id"],
+                    "user_name": r["user_name"],
+                    "user_id": r["user_id"],
+                    "equipments_summary": ", ".join(eq_names),
+                    "start_date": r["start_date"],
+                    "end_date": r["end_date"],
+                    "approval": r["approval"],
+                    "checkout": r["checkout"],
+                    "return_status": r["return_status"],
+                }
+            )
+
+        df_rentals = pd.DataFrame(flat_rentals)
         df_display = df_rentals[
             [
                 "res_id",
                 "user_name",
                 "user_id",
+                "equipments_summary",
                 "start_date",
                 "end_date",
                 "approval",
@@ -341,6 +423,7 @@ with tab3:
             "예약 넘버",
             "신청자 성명",
             "신청자 ID(핸드폰)",
+            "대여 장비 요약",
             "시작일",
             "반납 예정일",
             "대여 승인",
@@ -349,7 +432,7 @@ with tab3:
         ]
 
         st.subheader("📊 전체 대여 일정 표")
-        st.dataframe(df_display, use_container_width=True)
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
 
         if is_admin:
             st.subheader("🛠️ 일정 조정 (관리자 전용)")
