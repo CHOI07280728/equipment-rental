@@ -23,43 +23,50 @@ if "users" not in st.session_state:
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 
-# 기자재 데이터베이스 (카테고리, 일련번호, 기자재명 체계)
+# 기자재 데이터베이스 (장비 상태 속성 포함)
 if "equipments" not in st.session_state:
     st.session_state.equipments = [
         {
             "id": "EQ-101",
             "category": "카메라",
             "name": "Blackmagic Pocket Cinema Camera 6K Pro",
+            "status": "대여 가능",
         },
         {
             "id": "EQ-102",
             "category": "카메라",
             "name": "Sony FX3 시네마 카메라",
+            "status": "대여 가능",
         },
         {
             "id": "EQ-103",
             "category": "삼각대",
             "name": "Libec 650EX 비디오 삼각대",
+            "status": "대여 가능",
         },
         {
             "id": "EQ-104",
             "category": "액세서리",
             "name": "SmallRig 숄더 리그 키트",
+            "status": "대여 가능",
         },
         {
             "id": "EQ-105",
             "category": "음향",
             "name": "Hollyland Lark M1 무선 마이크",
+            "status": "대여 가능",
         },
         {
             "id": "EQ-106",
             "category": "조명",
             "name": "Amaran 200d LED 지속광 조명",
+            "status": "점검 중",
         },
         {
             "id": "EQ-107",
             "category": "디스플레이",
             "name": "Atomos Ninja V 5인치 모니터",
+            "status": "대여 가능",
         },
     ]
 
@@ -74,11 +81,19 @@ if "rentals" not in st.session_state:
                     "id": "EQ-101",
                     "category": "카메라",
                     "name": "Blackmagic Pocket Cinema Camera 6K Pro",
+                    "status": "대여 중",
                 },
                 {
                     "id": "EQ-103",
                     "category": "삼각대",
                     "name": "Libec 650EX 비디오 삼각대",
+                    "status": "대여 중",
+                },
+                {
+                    "id": "EQ-105",
+                    "category": "음향",
+                    "name": "Hollyland Lark M1 무선 마이크",
+                    "status": "대여 중",
                 },
             ],
             "start_date": "2026-09-16",
@@ -161,7 +176,7 @@ else:
 # 메인 타이틀
 st.title("🎥 전문 장비 대여 및 통합 일정 관리 시스템")
 
-# 메인 탭 구성 (관리자 기능 포함 5대 탭)
+# 메인 탭 구성
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📝 장비 대여 신청서",
     "⚙️ 관리자 승인 및 불출/반납 관리",
@@ -193,10 +208,10 @@ with tab1:
                 disabled=True,
             )
 
-        st.subheader("📦 대여 기자재 선택 (일련번호 표기)")
+        st.subheader("📦 대여 기자재 선택 (일련번호 및 실시간 상태 표기)")
 
         eq_map = {
-            f"[{item['id']}] [{item['category']}] {item['name']}": item
+            f"[{item['id']}] [{item['category']}] {item['name']} ({item.get('status', '대여 가능')})": item
             for item in st.session_state.equipments
         }
 
@@ -247,7 +262,7 @@ with tab1:
                 )
 
 # ---------------------------------------------------------
-# TAB 2: 관리자 대여 승인 및 불출/반납 관리
+# TAB 2: 관리자 대여 승인 및 불출/반납 관리 (카테고리별 그룹화 화면 개선)
 # ---------------------------------------------------------
 with tab2:
     st.header("⚙️ 관리자 대여 승인 및 불출/반납 관리")
@@ -321,8 +336,9 @@ with tab2:
                         st.write("**반납 완료**")
                         st.badge(rental["return_status"])
 
+                # [개선] 카테고리별로 기자재를 그룹화하여 깔끔하게 디스플레이
                 with st.expander(
-                    f"🔍 [상세보기] 예약 넘버 {rental['res_id']} 대여 내역 및 기자재 명세서",
+                    f"🔍 [상세보기] 예약 넘버 {rental['res_id']} 대여 내역 및 기자재 명세서 (카테고리별 분류)",
                     expanded=False,
                 ):
                     c1, c2 = st.columns([1, 2])
@@ -338,7 +354,7 @@ with tab2:
 
                     with c2:
                         st.markdown(
-                            "**📋 신청 기자재 목록 (카테고리별 분류 및 일련번호)**"
+                            "**📋 카테고리별 신청 기자재 명세서**"
                         )
 
                         eq_list = rental["equipments"]
@@ -353,24 +369,28 @@ with tab2:
                                         "category": "기타",
                                         "id": "-",
                                         "name": str(eq),
+                                        "status": "정보 없음",
                                     }
                                 )
 
                         df_eq = pd.DataFrame(formatted_eqs)
                         if not df_eq.empty:
-                            df_eq = df_eq[["category", "id", "name"]]
-                            df_eq.columns = [
-                                "카테고리 (분류)",
-                                "일련번호 (ID)",
-                                "기자재명",
-                            ]
-                            df_eq = df_eq.sort_values(by="카테고리 (분류)")
-
-                            st.dataframe(
-                                df_eq,
-                                use_container_width=True,
-                                hide_index=True,
-                            )
+                            categories = df_eq["category"].unique()
+                            for cat in categories:
+                                st.markdown(f"##### 📁 {cat}")
+                                sub_df = df_eq[df_eq["category"] == cat][
+                                    ["id", "name", "status"]
+                                ]
+                                sub_df.columns = [
+                                    "일련번호 (ID)",
+                                    "기자재명",
+                                    "현재 상태",
+                                ]
+                                st.dataframe(
+                                    sub_df,
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
 
                 st.divider()
 
@@ -468,7 +488,7 @@ with tab3:
                 st.rerun()
 
 # ---------------------------------------------------------
-# TAB 4: 장비 등록 및 관리 (신규 요구사항 1번)
+# TAB 4: 장비 등록 및 관리 (상태 즉시 수정 & 삭제 가독성 고도화)
 # ---------------------------------------------------------
 with tab4:
     st.header("📦 장비 등록 및 관리 (관리자 전용)")
@@ -477,7 +497,7 @@ with tab4:
         st.warning("⚠️ 장비 등록 및 관리는 관리자 계정으로 로그인해야 접근 가능함.")
     else:
         st.subheader("➕ 신규 기자재 등록")
-        col_e1, col_e2, col_e3 = st.columns(3)
+        col_e1, col_e2, col_e3, col_e4 = st.columns(4)
         with col_e1:
             new_cat = st.text_input(
                 "카테고리 (분류)", placeholder="예: 카메라, 조명, 음향"
@@ -489,6 +509,11 @@ with tab4:
         with col_e3:
             new_name = st.text_input(
                 "기자재명", placeholder="예: Canon EOS R5"
+            )
+        with col_e4:
+            new_status = st.selectbox(
+                "초기 장비 상태",
+                ["대여 가능", "점검 중", "수리 중", "폐기/불가"],
             )
 
         if st.button("장비 등록 완료", type="primary"):
@@ -504,42 +529,86 @@ with tab4:
                         "id": new_id.strip(),
                         "category": new_cat.strip(),
                         "name": new_name.strip(),
+                        "status": new_status,
                     }
                 )
                 st.success(
-                    f"신규 장비 [{new_id.strip()}] {new_name.strip()} 등록이 정상 완료되었음."
+                    f"신규 장비 [{new_id.strip()}] {new_name.strip()} 등록이 완료되었음."
                 )
                 st.rerun()
 
         st.divider()
-        st.subheader("📋 등록된 전체 기자재 관리 목록")
+
+        # [개선 1] 상태 컬럼 실시간 수정 가능한 st.data_editor 도입
+        st.subheader("📋 등록된 기자재 목록 및 상태 즉각 수정")
+        st.caption("💡 아래 표의 '장비 상태' 셀을 클릭하면 즉시 상태를 변경할 수 있음.")
 
         df_eq_manage = pd.DataFrame(st.session_state.equipments)
         if not df_eq_manage.empty:
-            df_eq_manage = df_eq_manage[["category", "id", "name"]]
-            df_eq_manage.columns = ["카테고리 (분류)", "일련번호 (ID)", "기자재명"]
-            st.dataframe(
-                df_eq_manage.sort_values(by="카테고리 (분류)"),
+            df_eq_manage = df_eq_manage[["category", "id", "name", "status"]]
+            df_eq_manage.columns = [
+                "카테고리 (분류)",
+                "일련번호 (ID)",
+                "기자재명",
+                "장비 상태",
+            ]
+
+            edited_df = st.data_editor(
+                df_eq_manage,
+                column_config={
+                    "장비 상태": st.column_config.SelectboxColumn(
+                        "장비 상태",
+                        options=["대여 가능", "점검 중", "수리 중", "폐기/불가"],
+                        required=True,
+                    )
+                },
+                disabled=["카테고리 (분류)", "일련번호 (ID)", "기자재명"],
                 use_container_width=True,
                 hide_index=True,
+                key="eq_editor",
             )
 
+            # 변경된 데이터 세션 상태 반영
+            updated_equipments = []
+            for _, row in edited_df.iterrows():
+                updated_equipments.append(
+                    {
+                        "id": row["일련번호 (ID)"],
+                        "category": row["카테고리 (분류)"],
+                        "name": row["기자재명"],
+                        "status": row["장비 상태"],
+                    }
+                )
+            st.session_state.equipments = updated_equipments
+
+            st.divider()
+
+            # [개선 2] 삭제 시 일련번호 + 기자재명 + 카테고리가 모두 표기되는 셀렉트박스
             st.subheader("🗑️ 등록 장비 삭제")
-            del_eq_id = st.selectbox(
-                "삭제할 장비 선택 (일련번호 기준):",
-                [eq["id"] for eq in st.session_state.equipments],
-            )
-            if st.button("선택 장비 삭제"):
-                st.session_state.equipments = [
-                    eq
-                    for eq in st.session_state.equipments
-                    if eq["id"] != del_eq_id
-                ]
-                st.success(f"일련번호 [{del_eq_id}] 장비 삭제가 완료되었음.")
-                st.rerun()
+
+            eq_del_options = {
+                f"[{eq['id']}] {eq['name']} ({eq['category']})": eq["id"]
+                for eq in st.session_state.equipments
+            }
+
+            if eq_del_options:
+                selected_del_label = st.selectbox(
+                    "삭제할 장비 선택 (일련번호 및 기자재명 포함):",
+                    options=list(eq_del_options.keys()),
+                )
+
+                if st.button("선택 장비 삭제"):
+                    target_id = eq_del_options[selected_del_label]
+                    st.session_state.equipments = [
+                        eq
+                        for eq in st.session_state.equipments
+                        if eq["id"] != target_id
+                    ]
+                    st.success(f"장비 {selected_del_label} 삭제가 완료되었음.")
+                    st.rerun()
 
 # ---------------------------------------------------------
-# TAB 5: 회원 정보 관리 (신규 요구사항 2번)
+# TAB 5: 회원 정보 관리
 # ---------------------------------------------------------
 with tab5:
     st.header("👥 회원 정보 관리 (관리자 전용)")
@@ -579,7 +648,6 @@ with tab5:
 
             col_m1, col_m2 = st.columns(2)
 
-            # 비밀번호 변경
             with col_m1:
                 st.markdown("**🔑 비밀번호 변경**")
                 mod_pw = st.text_input(
@@ -599,7 +667,6 @@ with tab5:
                         )
                         st.rerun()
 
-            # 회원 삭제
             with col_m2:
                 st.markdown("**🗑️ 회원 삭제**")
                 st.caption("주의: 회원 삭제 시 복구할 수 없음.")
