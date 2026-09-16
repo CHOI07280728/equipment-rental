@@ -9,7 +9,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 2. 세션 상태(Session State) 초기화
+# 2. 세션 상태(Session State) 초기화 및 데이터 구조 고도화
 if "users" not in st.session_state:
     st.session_state.users = {
         "admin": {
@@ -23,7 +23,7 @@ if "users" not in st.session_state:
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 
-# 기자재 데이터베이스 (일련번호 포함)
+# 기자재 데이터베이스 (일련번호 EQ-100 단위 고유 관리)
 if "equipments" not in st.session_state:
     st.session_state.equipments = [
         {
@@ -63,6 +63,7 @@ if "equipments" not in st.session_state:
         },
     ]
 
+# 대여 신청 및 예약 데이터베이스
 if "rentals" not in st.session_state:
     st.session_state.rentals = [
         {
@@ -90,7 +91,7 @@ if "rentals" not in st.session_state:
         }
     ]
 
-# 3. 사이드바 - 로그인 및 회원가입
+# 3. 사이드바 - 회원 인증 (로그인 / 회원가입)
 st.sidebar.title("🔐 회원 인증 Center")
 
 if st.session_state.logged_in_user is None:
@@ -158,8 +159,10 @@ else:
         st.session_state.logged_in_user = None
         st.rerun()
 
+# 메인 타이틀
 st.title("🎥 전문 장비 대여 및 통합 일정 관리 시스템")
 
+# 메인 탭 구성
 tab1, tab2, tab3 = st.tabs([
     "📝 장비 대여 신청서",
     "⚙️ 관리자 승인 및 불출/반납 관리",
@@ -191,14 +194,14 @@ with tab1:
 
         st.subheader("📦 대여 기자재 선택 (일련번호 표기)")
 
-        # 선택 옵션 생성 (일련번호 ID 포함)
+        # 선택 옵션 생성 (일련번호 ID 매핑)
         eq_map = {
             f"[{item['id']}] [{item['category']}] {item['name']}": item
             for item in st.session_state.equipments
         }
 
         selected_display_names = st.multiselect(
-            "대여할 장비를 선택해줌 (일련번호 매핑됨):",
+            "대여할 장비를 선택해줌 (일련번호 포함):",
             options=list(eq_map.keys()),
             placeholder="장비를 선택해줌...",
         )
@@ -264,7 +267,7 @@ with tab2:
             with st.container():
                 st.markdown(f"#### 📌 예약 넘버: `{rental['res_id']}`")
 
-                # 상단 메인 제어바
+                # 상단 주요 제어바
                 col_info, col_app, col_chk, col_ret = st.columns(
                     [2.5, 1.2, 1.2, 1.2]
                 )
@@ -319,7 +322,7 @@ with tab2:
                         st.write("**반납 완료**")
                         st.badge(rental["return_status"])
 
-                # [수정] 상세 보기를 다음 줄 전체 너비 Expander로 변경
+                # 하단 전체 너비 Expander 상세보기
                 with st.expander(
                     f"🔍 [상세보기] 예약 넘버 {rental['res_id']} 대여 내역 및 기자재 명세서",
                     expanded=False,
@@ -357,7 +360,7 @@ with tab2:
 
                         df_eq = pd.DataFrame(formatted_eqs)
                         if not df_eq.empty:
-                            # [수정] 카테고리 컬럼을 가장 왼쪽에 배치 및 정렬
+                            # 카테고리 맨 왼쪽 배치 및 정렬
                             df_eq = df_eq[["category", "id", "name"]]
                             df_eq.columns = [
                                 "카테고리 (분류)",
