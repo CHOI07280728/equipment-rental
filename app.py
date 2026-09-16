@@ -5,6 +5,21 @@ import hashlib
 from datetime import date, datetime, timedelta
 
 # ==========================================
+# 0. 상수 정의 (대여/반납 지정 시간 옵션)
+# ==========================================
+TIME_SLOTS = [
+    "08:00-08:20",
+    "09:10-09:20",
+    "10:10-10:20",
+    "11:10-11:20",
+    "12:10-13:00",
+    "13:50-14:00",
+    "14:50-15:00",
+    "15:50-16:00",
+    "협의요청"
+]
+
+# ==========================================
 # 1. DB 및 보안 관련 함수 (SHA-256 Hashing)
 # ==========================================
 DB_FILE = "rental_system.db"
@@ -19,7 +34,7 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 def init_db():
-    """데이터베이스 및 기본 관리자 계정 초기화"""
+    """데이터베이스, 기본 계정 및 자동 컬럼 마이그레이션 초기화"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -52,12 +67,22 @@ def init_db():
             user_name TEXT NOT NULL,
             start_date TEXT NOT NULL,
             end_date TEXT NOT NULL,
+            start_time TEXT DEFAULT '08:00-08:20',
+            end_time TEXT DEFAULT '15:50-16:00',
             status TEXT DEFAULT 'PENDING',
             FOREIGN KEY (equip_id) REFERENCES equipment (id),
             FOREIGN KEY (user_id) REFERENCES users (username)
         )
     ''')
     
+    # 기존 DB 파일과의 호환성을 위한 마이그레이션 (컬럼 존재 유무 확인 후 추가)
+    cursor.execute("PRAGMA table_info(reservation)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'start_time' not in columns:
+        cursor.execute("ALTER TABLE reservation ADD COLUMN start_time TEXT DEFAULT '08:00-08:20'")
+    if 'end_time' not in columns:
+        cursor.execute("ALTER TABLE reservation ADD COLUMN end_time TEXT DEFAULT '15:50-16:00'")
+
     # 초기 시스템 관리자 계정 생성 (최초 1회)
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
@@ -215,8 +240,7 @@ else:
     tabs = st.tabs(["📋 기자재 목록", "📝 대여 신청", "📜 내 신청 내역", "📅 전체 일정 현황"])
 
 # ------------------------------------------
-# TAB 1: 보유 기자재 목록 (요구사항: 순서 변경)
-# 순서: 1. 카테고리, 2. 장비명, 3. 일련번호, 4. 대여 가능 상태
+# TAB 1: 보유 기자재 목록 & 신규 등록 (순서: 카테고리 -> 장비명 -> 일련번호)
 # ------------------------------------------
 with tabs[0]:
     st.subheader("보유 기자재 목록")
@@ -227,7 +251,6 @@ with tabs[0]:
     )
     conn.close()
     
-    # 상태값 명칭 변경 (AVAILABLE -> 대여 가능 / RENTED -> 대여중)
     df_eq['상태'] = df_eq['상태'].replace({'AVAILABLE': '🟢 대여 가능', 'RENTED': '🔴 대여중 (불출됨)'})
     st.dataframe(df_eq, use_container_width=True)
     
@@ -235,17 +258,19 @@ with tabs[0]:
         st.divider()
         st.subheader("➕ 신규 기자재 등록 (관리자 전용)")
         with st.form("add_equip_form"):
-            col_id, col_name, col_cat = st.columns(3)
-            with col_id:
-                new_id = st.text_input("일련번호 (예: 26fx01)")
-            with col_name:
-                new_name = st.text_input("장비명")
+            # 입력 순서 조정: 1. 카테고리, 2. 장비명, 3. 일련번호
+            col_cat, col_name, col_id = st.columns(3)
             with col_cat:
-                new_cat = st.selectbox("카테고리", ["카메라", "음향", "조명", "삼각대/그립", "기타"])
+                new_cat = st.selectbox("1. 카테고리", ["카메라", "음향", "조명", "삼각대/그립", "기타"])
+            with col_name:
+                new_name = st.text_input("2. 장비명")
+            with col_id:
+                new_id = st.text_input("3. 일련번호 (예: 26fx01)")
+                
             submit_eq = st.form_submit_button("기자재 등록")
             
             if submit_eq:
-                if new_id and new_name:
+                if new_id and new_name and new_cat:
                     try:
                         conn = get_db_connection()
                         cursor = conn.cursor()
@@ -260,7 +285,7 @@ with tabs[0]:
                     st.warning("모든 필드를 입력해야 함.")
 
 # ------------------------------------------
-# TAB 2: 대여 신청 (요구사항: 1단계 카테고리 -> 2단계 대여 가능 장비만 선택)
+# TAB 2: 대여 신청 (대여/반납 일자 및 교시별 지정 시간 선택)
 # ------------------------------------------
 with tabs[1]:
     st.subheader("장비 대여 신청서 작성")
@@ -269,8 +294,8 @@ with tabs[1]:
     cat_df = pd.read_sql_query("SELECT DISTINCT category FROM equipment", conn)
     categories = cat_df['category'].tolist() if not cat_df.empty else []
     
-    col1, col2 = st.columns(2)
-    with col1:
+    col_left, col_right = st.columns(2)
+    with col_left:
         st.text_input("신청자 성명", value=f"{user_info['name']} ({user_info['username']})", disabled=True)
         
         # 1단계: 카테고리 선택
@@ -278,7 +303,6 @@ with tabs[1]:
         
         selected_equip_id = None
         if selected_cat and categories:
-            # 해당 카테고리 장비 중 대여 가능(AVAILABLE) 상태인 장비만 추출
             equip_df = pd.read_sql_query(
                 "SELECT id, name FROM equipment WHERE category = ? AND status = 'AVAILABLE'", 
                 conn, params=(selected_cat,)
@@ -288,23 +312,34 @@ with tabs[1]:
                 st.warning("⚠️ 현재 선택한 카테고리에 대여 가능한 장비가 없음.")
             else:
                 equip_options = {f"[{row['id']}] {row['name']}": row['id'] for _, row in equip_df.iterrows()}
-                # 2단계: 장비 선택
+                # 2단계: 대여 가능 장비 선택
                 selected_label = st.selectbox("2단계: 장비 선택 (대여 가능 장비만 표시됨)", list(equip_options.keys()))
                 selected_equip_id = equip_options[selected_label]
                 
     conn.close()
 
-    with col2:
+    with col_right:
         today = date.today()
+        st.markdown("##### 📅 사용 기간 및 대여/반납 시간 설정")
+        
+        # 달력 기반 사용 기간 선택
         rental_period = st.date_input(
-            "대여 기간 선택 (시작일 ~ 반납일)",
+            "사용 기간 선택 (대여일 ~ 반납일)",
             value=(today, today + timedelta(days=1)),
             min_value=today
         )
+        
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            start_time_slot = st.selectbox("대여 시간 선택", TIME_SLOTS, index=0)
+        with col_t2:
+            end_time_slot = st.selectbox("반납 시간 선택", TIME_SLOTS, index=7)
 
     if selected_equip_id and len(rental_period) == 2:
         start_d, end_d = rental_period
         start_str, end_str = start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d")
+        
+        st.info(f"📌 **최종 신청 내용**: 대여 `{start_str} [{start_time_slot}]` ~ 반납 `{end_str} [{end_time_slot}]`")
         
         is_available, conflicts = check_overlap(selected_equip_id, start_str, end_str)
         
@@ -314,8 +349,10 @@ with tabs[1]:
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO reservation (equip_id, user_id, user_name, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, 'PENDING')",
-                    (selected_equip_id, user_info["username"], user_info["name"], start_str, end_str)
+                    '''INSERT INTO reservation 
+                       (equip_id, user_id, user_name, start_date, end_date, start_time, end_time, status) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')''',
+                    (selected_equip_id, user_info["username"], user_info["name"], start_str, end_str, start_time_slot, end_time_slot)
                 )
                 conn.commit()
                 conn.close()
@@ -335,7 +372,8 @@ if user_info["role"] == "ADMIN":
         
         conn = get_db_connection()
         query = '''
-            SELECT r.id, r.equip_id, e.name as equip_name, r.user_name, r.user_id, r.start_date, r.end_date, r.status 
+            SELECT r.id, r.equip_id, e.name as equip_name, r.user_name, r.user_id, 
+                   r.start_date, r.end_date, r.start_time, r.end_time, r.status 
             FROM reservation r
             JOIN equipment e ON r.equip_id = e.id
             ORDER BY r.id DESC
@@ -355,8 +393,12 @@ if user_info["role"] == "ADMIN":
                     "REJECTED": "🔴 거절됨"
                 }.get(row['status'], row['status'])
                 
+                s_time = row['start_time'] if row['start_time'] else "시간 미지정"
+                e_time = row['end_time'] if row['end_time'] else "시간 미지정"
+                
                 with st.expander(f"예약 #{row['id']} | {row['equip_name']} (일련번호: {row['equip_id']}) - 신청자: {row['user_name']} ({row['user_id']}) [{status_label}]"):
-                    st.write(f"- 대여 기간: **{row['start_date']} ~ {row['end_date']}**")
+                    st.write(f"- 대여 일시: **{row['start_date']} [{s_time}]**")
+                    st.write(f"- 반납 일시: **{row['end_date']} [{e_time}]**")
                     
                     c1, c2, c3 = st.columns(3)
                     conn = get_db_connection()
@@ -392,8 +434,10 @@ else:
         st.subheader("📜 내 대여 신청 내역")
         conn = get_db_connection()
         query = '''
-            SELECT r.id AS '신청ID', e.name AS '장비명', r.start_date AS '시작일', 
-                   r.end_date AS '반납일', r.status AS '상태'
+            SELECT r.id AS '신청ID', e.name AS '장비명', 
+                   (r.start_date || ' (' || COALESCE(r.start_time, '') || ')') AS '대여 일시', 
+                   (r.end_date || ' (' || COALESCE(r.end_time, '') || ')') AS '반납 일시', 
+                   r.status AS '상태'
             FROM reservation r
             JOIN equipment e ON r.equip_id = e.id
             WHERE r.user_id = ?
@@ -415,7 +459,9 @@ with tabs[3]:
     conn = get_db_connection()
     df_all = pd.read_sql_query('''
         SELECT r.id AS '예약ID', e.name AS '장비명', r.user_name AS '신청자', 
-               r.start_date AS '시작일', r.end_date AS '반납예정일', r.status AS '상태'
+               (r.start_date || ' [' || COALESCE(r.start_time, '') || ']') AS '대여 일시', 
+               (r.end_date || ' [' || COALESCE(r.end_time, '') || ']') AS '반납 일시', 
+               r.status AS '상태'
         FROM reservation r
         JOIN equipment e ON r.equip_id = e.id
         ORDER BY r.start_date ASC
@@ -424,7 +470,7 @@ with tabs[3]:
     st.dataframe(df_all, use_container_width=True)
 
 # ------------------------------------------
-# TAB 5: 계정 관리 (요구사항: 비밀번호 변경(마스킹) & 계정 삭제 추가)
+# TAB 5: 계정 관리
 # ------------------------------------------
 if user_info["role"] == "ADMIN":
     with tabs[4]:
@@ -438,7 +484,6 @@ if user_info["role"] == "ADMIN":
         
         col_pw, col_del = st.columns(2)
         
-        # 1) 비밀번호 변경 기능 (type="password" 마스킹 적용)
         with col_pw:
             st.markdown("##### 🔑 사용자 비밀번호 변경")
             with st.form("admin_change_pw_form"):
@@ -454,7 +499,6 @@ if user_info["role"] == "ADMIN":
                     else:
                         st.warning("변경할 비밀번호를 입력해야 함.")
 
-        # 2) 계정 삭제 기능 (본인 및 최상위 admin 보호)
         with col_del:
             st.markdown("##### 🗑️ 계정 삭제")
             with st.form("admin_delete_user_form"):
