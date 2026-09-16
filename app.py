@@ -19,7 +19,7 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 def init_db():
-    """데이터베이스 및 기본 관리자/사용자 계정 초기화"""
+    """데이터베이스 및 기본 관리자 계정 초기화"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -58,17 +58,15 @@ def init_db():
         )
     ''')
     
-    # 시드 데이터: 초기 관리자 및 기본 유저 등록
+    # 시드 데이터: 초기 시스템 관리자 계정만 비밀리에 등록 (최초 1회)
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
-        default_users = [
-            ("admin", hash_password("admin123"), "시스템 관리자", "ADMIN"),
-            ("user1", hash_password("user123"), "김철수", "USER"),
-            ("user2", hash_password("user123"), "이영희", "USER")
-        ]
-        cursor.executemany("INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)", default_users)
+        cursor.execute(
+            "INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)",
+            ("admin", hash_password("admin123"), "시스템 관리자", "ADMIN")
+        )
     
-    # 시드 데이터: 단일 일련번호 샘플 등록 (eq001 -> 26fx01 변경 반영)
+    # 시드 데이터: 단일 일련번호 샘플 등록
     cursor.execute("SELECT COUNT(*) FROM equipment")
     if cursor.fetchone()[0] == 0:
         sample_equipments = [
@@ -99,6 +97,23 @@ def login_user(username, password):
         return {"username": user["username"], "name": user["name"], "role": user["role"]}
     return None
 
+def register_user(username, password, name):
+    """일반 사용자 회원가입"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    hashed_pw = hash_password(password)
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, 'USER')",
+            (username, hashed_pw, name)
+        )
+        conn.commit()
+        conn.close()
+        return True, "회원가입이 성공적으로 완료되었음. 로그인해주기 바람."
+    except sqlite3.IntegrityError:
+        conn.close()
+        return False, "이미 사용 중인 아이디임."
+
 def check_overlap(equip_id, start_str, end_str):
     """기간 중복 예약 검증"""
     conn = get_db_connection()
@@ -115,31 +130,51 @@ def check_overlap(equip_id, start_str, end_str):
     return len(conflicts) == 0, conflicts
 
 # ==========================================
-# 3. 레이아웃 & 사이드바 로그인 UI
+# 3. 사이드바 로그인 / 회원가입 폼
 # ==========================================
 st.set_page_config(page_title="장비 대여 관리 시스템 Pro", layout="wide")
 
-st.sidebar.title("🔐 계정 로그인")
-
 if st.session_state.user_info is None:
-    with st.sidebar.form("login_form"):
-        input_user = st.text_input("아이디 (ID)")
-        input_pw = st.text_input("비밀번호", type="password")
-        submit_login = st.form_submit_button("로그인")
-        
-        if submit_login:
-            user = login_user(input_user, input_pw)
-            if user:
-                st.session_state.user_info = user
-                st.sidebar.success(f"{user['name']}님 환영함.")
-                st.rerun()
-            else:
-                st.sidebar.error("아이디 또는 비밀번호가 올바르지 않음.")
+    st.sidebar.title("🔐 접속 인증")
+    auth_mode = st.sidebar.radio("서비스 이용 모드", ["로그인", "회원가입"])
     
-    st.sidebar.info("💡 **테스트 계정 정보**\n- 관리자: admin / admin123\n- 일반 유저: user1 / user123")
-    
-    st.title("📹 장비 대여 시스템")
-    st.warning("⚠️ 서비스를 이용하려면 사이드바에서 먼저 로그인하기 바람.")
+    if auth_mode == "로그인":
+        with st.sidebar.form("login_form"):
+            input_user = st.text_input("아이디 (ID)")
+            input_pw = st.text_input("비밀번호", type="password")
+            submit_login = st.form_submit_button("로그인")
+            
+            if submit_login:
+                user = login_user(input_user, input_pw)
+                if user:
+                    st.session_state.user_info = user
+                    st.sidebar.success(f"{user['name']}님 환영함.")
+                    st.rerun()
+                else:
+                    st.sidebar.error("아이디 또는 비밀번호가 올바르지 않음.")
+                    
+    elif auth_mode == "회원가입":
+        with st.sidebar.form("signup_form"):
+            new_user = st.text_input("사용할 아이디 (ID)")
+            new_pw = st.text_input("비밀번호", type="password")
+            new_pw_confirm = st.text_input("비밀번호 확인", type="password")
+            new_name = st.text_input("성명 (이름)")
+            submit_signup = st.form_submit_button("회원가입 완료")
+            
+            if submit_signup:
+                if not (new_user and new_pw and new_name):
+                    st.sidebar.warning("모든 항목을 입력해야 함.")
+                elif new_pw != new_pw_confirm:
+                    st.sidebar.error("비밀번호가 일치하지 않음.")
+                else:
+                    success, msg = register_user(new_user, new_pw, new_name)
+                    if success:
+                        st.sidebar.success(msg)
+                    else:
+                        st.sidebar.error(msg)
+
+    st.title("📹 장비 대여 및 일정 관리 시스템 Pro")
+    st.info("💡 오른쪽 사이드바에서 로그인 후 사용 가능함. 계정이 없다면 '회원가입' 모드로 계정을 만주기 바람.")
     st.stop()
 
 else:
@@ -153,7 +188,7 @@ else:
         st.rerun()
 
 # ==========================================
-# 4. 권한 기반 메인 UI (Tabs)
+# 4. 메인 대시보드 및 서비스 기능 (Tabs)
 # ==========================================
 st.title("📹 장비 대여 및 일정 관리 시스템 Pro")
 
@@ -163,7 +198,7 @@ else:
     tabs = st.tabs(["📋 기자재 목록", "📝 대여 신청", "📜 내 신청 내역", "📅 전체 일정 현황"])
 
 # ------------------------------------------
-# TAB 1: 기자재 목록 및 관리 ('일련번호' 명칭 변경)
+# TAB 1: 기자재 목록 및 관리
 # ------------------------------------------
 with tabs[0]:
     st.subheader("보유 기자재 목록")
@@ -347,18 +382,18 @@ with tabs[3]:
     st.dataframe(df_all, use_container_width=True)
 
 # ------------------------------------------
-# TAB 5: 계정 관리
+# TAB 5: 계정 관리 (ADMIN 전용)
 # ------------------------------------------
 if user_info["role"] == "ADMIN":
     with tabs[4]:
-        st.subheader("👥 신규 계정 등록 및 권한 설정 (관리자 전용)")
+        st.subheader("👥 계정 권한 관리 및 신규 계정 발급 (관리자 전용)")
         
         with st.form("create_user_form"):
             new_username = st.text_input("아이디 (ID)")
             new_password = st.text_input("비밀번호", type="password")
             new_name = st.text_input("사용자 성명")
             new_role = st.selectbox("권한", ["USER", "ADMIN"])
-            submit_user = st.form_submit_button("신규 계정 생성")
+            submit_user = st.form_submit_button("계정 생성")
             
             if submit_user:
                 if new_username and new_password and new_name:
