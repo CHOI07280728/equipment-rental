@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 # ==========================================
-# 0. 유틸리티 함수 및 상수 정의
+# 0. 유틸리티 함수 및 시스템 상수 정의
 # ==========================================
 DB_FILE = "rental_system.db"
 
@@ -23,7 +23,7 @@ TIME_SLOTS = [
 
 
 def clean_phone_id(input_str: str) -> str:
-    """핸드폰 번호 입력 시 하이픈(-) 및 공백 제거 (admin 계정 예외 처리)"""
+    """핸드폰 번호 입력 시 하이픈(-) 및 공백 자동 제거 (admin 계정 예외 처리)"""
     if not input_str:
         return ""
     cleaned = input_str.strip()
@@ -33,7 +33,7 @@ def clean_phone_id(input_str: str) -> str:
 
 
 # ==========================================
-# 1. SQLite 데이터베이스 영구 저장소 구축
+# 1. SQLite 데이터베이스 및 영구 저장소 구조
 # ==========================================
 def get_db():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -42,7 +42,7 @@ def get_db():
 
 
 def init_db():
-    """데이터베이스 테이블 생성 및 초기 기본 데이터 시드"""
+    """데이터베이스 테이블 생성 및 초기 기본 데이터 생성"""
     conn = get_db()
     cur = conn.cursor()
 
@@ -84,7 +84,7 @@ def init_db():
         )
     """)
 
-    # 4) 예약-기자재 매핑 테이블 (1개 예약당 여러 장비)
+    # 4) 예약-기자재 매핑 테이블
     cur.execute("""
         CREATE TABLE IF NOT EXISTS reservation_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,7 +103,7 @@ def init_db():
             " 'admin123', '총괄 관리자', 'ADMIN')"
         )
 
-    # 초기 샘플 기자재 등록
+    # 초기 기본 기자재 샘플 데이터 등록
     cur.execute("SELECT COUNT(*) FROM equipment")
     if cur.fetchone()[0] == 0:
         sample_eq = [
@@ -153,7 +153,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# 2. 페이지 설정 및 세션 초기화
+# 2. 페이지 기본 설정 및 세션 처리
 # ==========================================
 st.set_page_config(
     page_title="전문 기자재 대여 및 통합 일정 관리 시스템 Pro",
@@ -165,7 +165,6 @@ if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 
 
-# DB 조회 유틸리티 함수들
 def fetch_all_equipments():
     conn = get_db()
     df = pd.read_sql_query(
@@ -228,7 +227,7 @@ if st.session_state.logged_in_user is None:
         st.subheader("로그인")
         raw_login_id = st.text_input(
             "아이디 (핸드폰 번호)",
-            placeholder="010-1234-5678 또는 01012345678",
+            placeholder="하이픈 없이 입력 (예: 01012345678)",
             key="login_id",
         )
         login_pw = st.text_input("비밀번호", type="password", key="login_pw")
@@ -258,8 +257,11 @@ if st.session_state.logged_in_user is None:
 
     with tab_register:
         st.subheader("신규 회원가입")
+        st.caption(
+            "💡 핸드폰 번호는 하이픈('-') 없이 숫자만 입력해 주세요."
+        )
         raw_reg_phone = st.text_input(
-            "핸드폰 번호 (아이디)", placeholder="010-1234-5678", key="reg_phone"
+            "핸드폰 번호 (아이디)", placeholder="01012345678", key="reg_phone"
         )
         reg_name = st.text_input("성명", placeholder="홍길동", key="reg_name")
         reg_pw = st.text_input("비밀번호", type="password", key="reg_pw")
@@ -405,7 +407,6 @@ with tab1:
                     eq_map[name] for name in selected_display_names
                 ]
 
-                # 중복 예약 DB 검증
                 rentals = fetch_all_reservations()
                 overlap_conflict = False
                 conflict_details = ""
@@ -547,7 +548,6 @@ with tab2:
                         st.badge(rental["return_status"])
                         new_ret = rental["return_status"]
 
-                # 관리자 변경 사항 DB 저장
                 if is_admin and (
                     new_app != rental["approval"]
                     or new_chk != rental["checkout"]
@@ -823,7 +823,6 @@ with tab4:
                 key="eq_editor",
             )
 
-            # DB 상태 동기화
             conn = get_db()
             cur = conn.cursor()
             for _, row in edited_df.iterrows():
