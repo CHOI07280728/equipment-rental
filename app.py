@@ -1,9 +1,10 @@
 from datetime import date, datetime
+import re
 import pandas as pd
 import streamlit as st
 
 # ==========================================
-# 0. 시스템 상수 정의 (교시별 대여/반납 시간)
+# 0. 유틸리티 함수 및 상수 정의
 # ==========================================
 TIME_SLOTS = [
     "08:00-08:20",
@@ -17,8 +18,19 @@ TIME_SLOTS = [
     "협의요청",
 ]
 
+
+def clean_phone_id(input_str: str) -> str:
+    """핸드폰 번호 입력 시 하이픈(-) 및 공백 제거 (admin 계정 예외 처리)"""
+    if not input_str:
+        return ""
+    cleaned = input_str.strip()
+    if cleaned.lower() == "admin":
+        return "admin"
+    return re.sub(r"[^\d]", "", cleaned)
+
+
 # ==========================================
-# 1. 페이지 인프라 및 세션 데이터 초기화
+# 1. 페이지 설정 및 세션 데이터베이스 초기화
 # ==========================================
 st.set_page_config(
     page_title="전문 기자재 대여 및 통합 일정 관리 시스템 Pro",
@@ -26,7 +38,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 사용자 DB (초기 관리자 admin / admin123 자동 시드)
+# 사용자 데이터베이스 (초기 admin 계정 사전 탑재)
 if "users" not in st.session_state:
     st.session_state.users = {
         "admin": {
@@ -40,7 +52,7 @@ if "users" not in st.session_state:
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 
-# 기자재 DB (카테고리, 일련번호, 장비명, 실시간 상태 체계)
+# 기자재 데이터베이스 (카테고리, 일련번호, 장비명, 실시간 상태)
 if "equipments" not in st.session_state:
     st.session_state.equipments = [
         {
@@ -87,7 +99,7 @@ if "equipments" not in st.session_state:
         },
     ]
 
-# 예약 DB (다중 장비, 시간 옵션, 상태 관리)
+# 예약 데이터베이스
 if "rentals" not in st.session_state:
     st.session_state.rentals = [
         {
@@ -122,35 +134,40 @@ if "rentals" not in st.session_state:
 # ==========================================
 # 2. 사이드바 - 회원 인증 (로그인 / 회원가입)
 # ==========================================
-st.sidebar.title("🔐 회원 인증 Center")
+st.sidebar.title("🔐 회원 인증 센터")
 
 if st.session_state.logged_in_user is None:
     tab_login, tab_register = st.sidebar.tabs(["🔑 로그인", "📝 회원가입"])
 
     with tab_login:
         st.subheader("로그인")
-        login_id = st.text_input("아이디 (핸드폰 번호)", key="login_id")
+        raw_login_id = st.text_input(
+            "아이디 (핸드폰 번호)",
+            placeholder="010-1234-5678 또는 01012345678",
+            key="login_id",
+        )
         login_pw = st.text_input(
             "비밀번호", type="password", key="login_pw"
         )
 
         if st.button("로그인", use_container_width=True, type="primary"):
-            if login_id in st.session_state.users:
-                user_info = st.session_state.users[login_id]
+            clean_id = clean_phone_id(raw_login_id)
+            if clean_id in st.session_state.users:
+                user_info = st.session_state.users[clean_id]
                 if user_info["password"] == login_pw:
                     st.session_state.logged_in_user = user_info
-                    st.success(f"{user_info['name']}님, 접속을 환영함.")
+                    st.success(f"{user_info['name']}님, 환영합니다.")
                     st.rerun()
                 else:
-                    st.error("비밀번호가 일치하지 않음.")
+                    st.error("비밀번호가 일치하지 않습니다.")
             else:
-                st.error("존재하지 않는 아이디임.")
+                st.error("존재하지 않는 아이디입니다.")
 
     with tab_register:
         st.subheader("신규 회원가입")
-        reg_phone = st.text_input(
+        raw_reg_phone = st.text_input(
             "핸드폰 번호 (아이디)",
-            placeholder="01012345678",
+            placeholder="010-1234-5678",
             key="reg_phone",
         )
         reg_name = st.text_input("성명", placeholder="홍길동", key="reg_name")
@@ -162,20 +179,25 @@ if st.session_state.logged_in_user is None:
         )
 
         if st.button("회원가입 완료", use_container_width=True):
-            if not reg_phone or not reg_name or not reg_pw:
-                st.error("모든 입력 항목을 기입해야 함.")
-            elif reg_phone in st.session_state.users:
-                st.error("이미 가입된 핸드폰 번호(아이디)임.")
+            clean_reg_phone = clean_phone_id(raw_reg_phone)
+            if not clean_reg_phone or not reg_name or not reg_pw:
+                st.error("모든 입력 항목을 올바르게 작성해 주세요.")
+            elif not clean_reg_phone.isdigit():
+                st.error("핸드폰 번호는 숫자 형식으로 입력해 주세요.")
+            elif clean_reg_phone in st.session_state.users:
+                st.error("이미 가입된 핸드폰 번호(아이디)입니다.")
             elif reg_pw != reg_pw_confirm:
-                st.error("비밀번호 확인이 일치하지 않음.")
+                st.error("비밀번호 확인이 일치하지 않습니다.")
             else:
-                st.session_state.users[reg_phone] = {
+                st.session_state.users[clean_reg_phone] = {
                     "name": reg_name,
-                    "phone": reg_phone,
+                    "phone": clean_reg_phone,
                     "password": reg_pw,
                     "role": "USER",
                 }
-                st.success("회원가입이 정상 완료되었음. 로그인 탭을 이용해주기 바람.")
+                st.success(
+                    "회원가입이 완료되었습니다. 로그인 탭에서 로그인해 주세요."
+                )
 
 else:
     user = st.session_state.logged_in_user
@@ -214,7 +236,9 @@ with tab1:
     st.header("📝 장비 대여 신청서 작성")
 
     if st.session_state.logged_in_user is None:
-        st.warning("⚠️ 장비 대여 신청을 위해 먼저 사이드바에서 로그인해주기 바람.")
+        st.warning(
+            "⚠️ 장비 대여 신청을 이용하시려면 먼저 사이드바에서 로그인해 주세요."
+        )
     else:
         col_u1, col_u2 = st.columns(2)
         with col_u1:
@@ -232,17 +256,26 @@ with tab1:
 
         st.subheader("📦 대여 기자재 선택 (일련번호 및 실시간 상태 표기)")
 
-        # 대여 가능한 장비 목록 구성
-        eq_map = {
-            f"[{item['id']}] [{item['category']}] {item['name']} ({item.get('status', '대여 가능')})": item
-            for item in st.session_state.equipments
-        }
+        eq_map = {}
+        disabled_items = []
+
+        for item in st.session_state.equipments:
+            label = f"[{item['id']}] [{item['category']}] {item['name']} ({item.get('status', '대여 가능')})"
+            if item.get("status") == "대여 가능":
+                eq_map[label] = item
+            else:
+                disabled_items.append(label)
 
         selected_display_names = st.multiselect(
-            "대여할 장비를 선택해주기 바람 (다중 선택 가능):",
+            "대여할 장비를 선택해 주세요 (대여 불가능한 장비는 목록에서 제외됩니다):",
             options=list(eq_map.keys()),
-            placeholder="장비를 선택해줌...",
+            placeholder="장비를 선택해 주세요...",
         )
+
+        if disabled_items:
+            st.caption(
+                f"⚠️ 현재 점검/수리/불가로 신청 대상에서 제외된 장비: {', '.join(disabled_items)}"
+            )
 
         st.subheader("📅 사용 기간 및 교시별 지정 시간 선택")
         col_d1, col_d2 = st.columns(2)
@@ -254,40 +287,66 @@ with tab1:
             end_t = st.selectbox("반납 예정 시각", TIME_SLOTS, index=7)
 
         note = st.text_area(
-            "사용 목적 및 기타 요청사항", placeholder="예: 단편영화 제작 촬영 지원"
+            "사용 목적 및 기타 요청사항", placeholder="예: 단편영화 제작 촬영"
         )
 
         if st.button(
             "🚀 장비 대여 신청서 제출", type="primary", use_container_width=True
         ):
             if not selected_display_names:
-                st.error("대여할 장비를 최소 1개 이상 선택해야 함.")
+                st.error("대여할 장비를 최소 1개 이상 선택해 주세요.")
             elif start_d > end_d:
-                st.error("반납 예정일이 대여 시작일보다 빠를 수 없음.")
+                st.error("반납 예정일이 대여 시작일보다 빠를 수 없습니다.")
             else:
                 selected_equip_objs = [
                     eq_map[name] for name in selected_display_names
                 ]
-                res_no = f"RES-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                new_item = {
-                    "res_id": res_no,
-                    "user_name": app_name,
-                    "user_id": app_id,
-                    "equipments": selected_equip_objs,
-                    "start_date": str(start_d),
-                    "end_date": str(end_d),
-                    "start_time": start_t,
-                    "end_time": end_t,
-                    "approval": "대기",
-                    "checkout": "미불출",
-                    "return_status": "미반납",
-                    "note": note,
-                }
-                st.session_state.rentals.append(new_item)
-                st.balloons()
-                st.success(
-                    f"대여 신청이 성공적으로 완료되었음! (예약 넘버: {res_no})"
-                )
+
+                # 중복 예약 검증
+                overlap_conflict = False
+                conflict_details = ""
+                s_str, e_str = str(start_d), str(end_d)
+
+                for r in st.session_state.rentals:
+                    if r["approval"] in ["승인", "대기"]:
+                        if not (
+                            r["end_date"] < s_str or r["start_date"] > e_str
+                        ):
+                            r_eq_ids = [
+                                eq["id"]
+                                if isinstance(eq, dict)
+                                else str(eq)
+                                for eq in r["equipments"]
+                            ]
+                            for req_eq in selected_equip_objs:
+                                if req_eq["id"] in r_eq_ids:
+                                    overlap_conflict = True
+                                    conflict_details = f"장비 [{req_eq['id']}]는 해당 기간에 이미 기존 예약({r['user_name']}, {r['start_date']}~{r['end_date']})이 존재합니다."
+                                    break
+
+                if overlap_conflict:
+                    st.error(f"❌ 대여 신청 불가: {conflict_details}")
+                else:
+                    res_no = f"RES-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    new_item = {
+                        "res_id": res_no,
+                        "user_name": app_name,
+                        "user_id": app_id,
+                        "equipments": selected_equip_objs,
+                        "start_date": s_str,
+                        "end_date": e_str,
+                        "start_time": start_t,
+                        "end_time": end_t,
+                        "approval": "대기",
+                        "checkout": "미불출",
+                        "return_status": "미반납",
+                        "note": note,
+                    }
+                    st.session_state.rentals.append(new_item)
+                    st.balloons()
+                    st.success(
+                        f"대여 신청이 성공적으로 완료되었습니다! (예약 번호: {res_no})"
+                    )
 
 # ---------------------------------------------------------
 # TAB 2: 관리자 승인 및 불출/반납 관리
@@ -296,14 +355,16 @@ with tab2:
     st.header("⚙️ 관리자 대여 승인 및 불출/반납 관리")
 
     if not is_admin:
-        st.info("💡 관리자 계정으로 로그인 시 대여 승인, 불출, 반납 상태를 제어할 수 있음.")
+        st.info(
+            "💡 관리자 계정으로 로그인하시면 대여 승인, 불출, 반납 상태를 직접 변경하실 수 있습니다."
+        )
 
     if not st.session_state.rentals:
-        st.info("현재 등록된 대여 신청 내역이 없음.")
+        st.info("현재 등록된 대여 신청 내역이 없습니다.")
     else:
         for idx, rental in enumerate(st.session_state.rentals):
             with st.container():
-                st.markdown(f"#### 📌 예약 넘버: `{rental['res_id']}`")
+                st.markdown(f"#### 📌 예약 번호: `{rental['res_id']}`")
 
                 col_info, col_app, col_chk, col_ret = st.columns(
                     [2.5, 1.2, 1.2, 1.2]
@@ -359,9 +420,8 @@ with tab2:
                         st.write("**반납 완료**")
                         st.badge(rental["return_status"])
 
-                # 하단 전체 너비 Expander - 카테고리별 그룹화 명세서
                 with st.expander(
-                    f"🔍 [상세보기] 예약 넘버 {rental['res_id']} 대여 내역 및 기자재 명세서",
+                    f"🔍 [상세보기] 예약 번호 {rental['res_id']} 대여 내역 및 기자재 명세서 (카테고리별 분류)",
                     expanded=False,
                 ):
                     c1, c2 = st.columns([1, 2])
@@ -427,7 +487,7 @@ with tab3:
     st.header("📅 대여 일정 현황 및 일정 조정")
 
     if not st.session_state.rentals:
-        st.info("등록된 대여 일정이 없음.")
+        st.info("등록된 대여 일정이 없습니다.")
     else:
         flat_rentals = []
         for r in st.session_state.rentals:
@@ -466,7 +526,7 @@ with tab3:
             ]
         ]
         df_display.columns = [
-            "예약 넘버",
+            "예약 번호",
             "신청자 성명",
             "신청자 ID(핸드폰)",
             "대여 장비 요약",
@@ -480,10 +540,21 @@ with tab3:
         st.subheader("📊 전체 대여 일정 표")
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
+        csv_data = df_display.to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label="📥 대여 현황 CSV 엑셀 다운로드",
+            data=csv_data,
+            file_name=f"rental_status_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+        )
+
         if is_admin:
+            st.divider()
             st.subheader("🛠️ 일정 조정 (관리자 전용)")
             res_list = [r["res_id"] for r in st.session_state.rentals]
-            target_res = st.selectbox("일정을 조정할 예약 넘버 선택:", res_list)
+            target_res = st.selectbox(
+                "일정을 조정할 예약 번호를 선택해 주세요:", res_list
+            )
 
             target_item = next(
                 r for r in st.session_state.rentals if r["res_id"] == target_res
@@ -510,7 +581,9 @@ with tab3:
             if st.button("일정 변경 적용"):
                 target_item["start_date"] = str(new_start)
                 target_item["end_date"] = str(new_end)
-                st.success(f"예약 넘버 {target_res}의 대여 일정이 정상 수정되었음.")
+                st.success(
+                    f"예약 번호 {target_res}의 대여 일정이 성공적으로 수정되었습니다."
+                )
                 st.rerun()
 
 # ---------------------------------------------------------
@@ -520,9 +593,13 @@ with tab4:
     st.header("📦 장비 등록 및 관리 (관리자 전용)")
 
     if not is_admin:
-        st.warning("⚠️ 장비 등록 및 관리는 관리자 계정으로 로그인해야 접근 가능함.")
+        st.warning(
+            "⚠️ 장비 등록 및 관리는 관리자 계정으로 로그인하셔야 접근이 가능합니다."
+        )
     else:
-        st.subheader("➕ 신규 기자재 등록 (입력 순서: 카테고리 -> 장비명 -> 일련번호)")
+        st.subheader(
+            "➕ 신규 기자재 등록 (입력 순서: 1. 카테고리 → 2. 장비명 → 3. 일련번호)"
+        )
         col_e1, col_e2, col_e3, col_e4 = st.columns(4)
         with col_e1:
             new_cat = st.selectbox(
@@ -544,11 +621,13 @@ with tab4:
 
         if st.button("기자재 등록 완료", type="primary"):
             if not new_cat or not new_id or not new_name:
-                st.error("모든 정보를 올바르게 입력해야 함.")
+                st.error("모든 항목을 입력해 주세요.")
             elif any(
                 eq["id"] == new_id.strip() for eq in st.session_state.equipments
             ):
-                st.error("이미 존재하는 일련번호(ID)임. 중복 일련번호는 사용할 수 없음.")
+                st.error(
+                    "이미 존재하는 일련번호(ID)입니다. 다른 일련번호를 입력해 주세요."
+                )
             else:
                 st.session_state.equipments.append(
                     {
@@ -559,19 +638,19 @@ with tab4:
                     }
                 )
                 st.success(
-                    f"신규 기자재 [{new_id.strip()}] {new_name.strip()} 등록이 완료되었음."
+                    f"신규 기자재 [{new_id.strip()}] {new_name.strip()} 등록이 완료되었습니다."
                 )
                 st.rerun()
 
         st.divider()
 
-        # st.data_editor를 통한 상태 즉시 수정
         st.subheader("📋 등록 기자재 목록 및 상태 즉시 수정")
-        st.caption("💡 '장비 상태' 셀을 직접 선택하여 변경하면 시스템에 실시간 저장됨.")
+        st.caption(
+            "💡 '장비 상태' 셀을 직접 선택하여 변경하시면 시스템에 실시간으로 반영됩니다."
+        )
 
         df_eq_manage = pd.DataFrame(st.session_state.equipments)
         if not df_eq_manage.empty:
-            # 요구사항 순서: 1. 카테고리, 2. 장비명, 3. 일련번호, 4. 상태
             df_eq_manage = df_eq_manage[["category", "name", "id", "status"]]
             df_eq_manage.columns = [
                 "카테고리 (분류)",
@@ -595,7 +674,6 @@ with tab4:
                 key="eq_editor",
             )
 
-            # 변경 상태 동기화
             updated_equipments = []
             for _, row in edited_df.iterrows():
                 updated_equipments.append(
@@ -610,7 +688,6 @@ with tab4:
 
             st.divider()
 
-            # 일련번호 + 기자재명 + 카테고리 모두 표기 삭제
             st.subheader("🗑️ 등록 기자재 삭제")
 
             eq_del_options = {
@@ -620,7 +697,7 @@ with tab4:
 
             if eq_del_options:
                 selected_del_label = st.selectbox(
-                    "삭제할 기자재 선택 (일련번호 및 장비명 포함):",
+                    "삭제할 기자재를 선택해 주세요 (일련번호 및 장비명 포함):",
                     options=list(eq_del_options.keys()),
                 )
 
@@ -631,7 +708,9 @@ with tab4:
                         for eq in st.session_state.equipments
                         if eq["id"] != target_id
                     ]
-                    st.success(f"장비 {selected_del_label} 삭제가 완료되었음.")
+                    st.success(
+                        f"장비 {selected_del_label} 삭제가 완료되었습니다."
+                    )
                     st.rerun()
 
 # ---------------------------------------------------------
@@ -641,7 +720,9 @@ with tab5:
     st.header("👥 회원 정보 관리 (관리자 전용)")
 
     if not is_admin:
-        st.warning("⚠️ 회원 정보 관리는 관리자 계정으로 로그인해야 접근 가능함.")
+        st.warning(
+            "⚠️ 회원 정보 관리는 관리자 계정으로 로그인하셔야 접근이 가능합니다."
+        )
     else:
         st.subheader("📋 전체 회원 현황")
 
@@ -663,7 +744,7 @@ with tab5:
         st.subheader("🛠️ 회원 비밀번호 변경 및 회원 삭제")
 
         target_user_id = st.selectbox(
-            "관리할 대상 회원 선택 (아이디):",
+            "관리할 대상 회원을 선택해 주세요 (아이디):",
             list(st.session_state.users.keys()),
         )
 
@@ -684,28 +765,34 @@ with tab5:
                 )
                 if st.button("비밀번호 변경 적용"):
                     if not mod_pw:
-                        st.error("변경할 비밀번호를 입력해야 함.")
+                        st.error("변경할 비밀번호를 입력해 주세요.")
                     else:
                         st.session_state.users[target_user_id][
                             "password"
                         ] = mod_pw
                         st.success(
-                            f"회원 `{target_user_id}`의 비밀번호 변경이 정상 완료되었음."
+                            f"회원 `{target_user_id}`의 비밀번호 변경이 성공적으로 완료되었습니다."
                         )
                         st.rerun()
 
             with col_m2:
                 st.markdown("**🗑️ 회원 삭제**")
-                st.caption("주의: 회원 삭제 시 복구할 수 없음.")
+                st.caption("주의: 회원 삭제 시 복구할 수 없습니다.")
                 if st.button("선택 회원 삭제", type="primary"):
                     if (
                         target_user_id
                         == st.session_state.logged_in_user["phone"]
                     ):
-                        st.error("현재 로그인 중인 본인 관리자 계정은 삭제할 수 없음.")
+                        st.error(
+                            "현재 로그인 중인 본인 관리자 계정은 삭제할 수 없습니다."
+                        )
                     elif target_user_id == "admin":
-                        st.error("최초 시스템 관리자 계정(admin)은 삭제할 수 없음.")
+                        st.error(
+                            "최초 시스템 관리자 계정(admin)은 삭제할 수 없습니다."
+                        )
                     else:
                         del st.session_state.users[target_user_id]
-                        st.success(f"회원 `{target_user_id}` 삭제가 완료되었음.")
+                        st.success(
+                            f"회원 `{target_user_id}` 삭제가 완료되었습니다."
+                        )
                         st.rerun()
